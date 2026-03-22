@@ -32,8 +32,22 @@ jobs:
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
-      - name: Run govulncheck
+      - name: Run govulncheck (text report)
+        run: govulncheck ./... 2>&1 | tee reports/govulncheck.txt || true
+
+      - name: Run govulncheck (JSON report)
+        run: govulncheck -json ./... > reports/govulncheck.json 2>&1 || true
+
+      - name: Fail if vulnerabilities found
         run: govulncheck ./...
+
+      - name: Upload govulncheck reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: govulncheck-report
+          path: reports/govulncheck.*
+          retention-days: 30
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 2. gosec — Go security static analyser
@@ -51,32 +65,40 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Run gosec
-        uses: securego/gosec@master
-        with:
-          # -no-fail: let the SARIF upload step decide severity; still fails on
-          # high-confidence findings via the exit-code check below.
-          # -fmt sarif: machine-readable output for GitHub Code Scanning.
-          args: >
-            -no-fail
-            -fmt sarif
-            -out gosec-results.sarif
-            ./...
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Run gosec — SARIF (for GitHub Security tab)
+        run: gosec -no-fail -fmt sarif -out reports/gosec.sarif ./...
+
+      - name: Run gosec — JSON report
+        run: gosec -no-fail -fmt json -out reports/gosec.json ./...
+
+      - name: Run gosec — human-readable text report
+        run: gosec -no-fail -fmt text -out reports/gosec.txt ./...
 
       - name: Upload SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: gosec-results.sarif
+          sarif_file: reports/gosec.sarif
           category: gosec
+
+      - name: Upload gosec reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gosec-report
+          path: reports/gosec.*
+          retention-days: 30
 
       - name: Fail on high-severity findings
         # Re-run without -no-fail so the job fails when gosec finds real issues.
-        # Exclude informational rules (G104 = "errors unhandled" in non-critical
-        # paths) to keep signal-to-noise high.
-        run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
-          gosec -severity high -confidence medium -exclude G104 ./...
+        # Exclude G104 (unhandled errors in non-critical paths) to reduce noise.
+        run: gosec -severity high -confidence medium -exclude G104 ./...
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 3. Dependency review — PR-only
@@ -111,10 +133,85 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Create reports directory
+        run: mkdir -p reports
+
       - name: List modules as JSON
         run: go list -json -deps ./... > go-list.json
 
-      - name: Run nancy
-        uses: sonatype-nexus-community/nancy-github-action@main
+      - name: Run nancy and capture report
+        run: |
+          curl -sSL https://github.com/sonatype-nexus-community/nancy/releases/latest/download/nancy-linux.amd64-musl \
+            -o /usr/local/bin/nancy && chmod +x /usr/local/bin/nancy
+          go list -json -deps ./... | nancy sleuth --loud 2>&1 | tee reports/nancy.txt || true
+          go list -json -deps ./... | nancy sleuth --output=json 2>&1 > reports/nancy.json || true
+
+      - name: Fail if vulnerabilities found
+        run: go list -json -deps ./... | nancy sleuth
+
+      - name: Upload nancy reports
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          nancyCommand: sleuth --loud
+          name: nancy-report
+          path: reports/nancy.*
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 5. Summary job — bundles all reports into one downloadable zip
+  # ─────────────────────────────────────────────────────────────────────────────
+  summary:
+    name: Bundle all reports
+    runs-on: ubuntu-latest
+    needs: [govulncheck, gosec, nancy]
+    if: always()
+    steps:
+      - name: Download govulncheck report
+        uses: actions/download-artifact@v4
+        with:
+          name: govulncheck-report
+          path: all-reports/govulncheck/
+        continue-on-error: true
+
+      - name: Download gosec report
+        uses: actions/download-artifact@v4
+        with:
+          name: gosec-report
+          path: all-reports/gosec/
+        continue-on-error: true
+
+      - name: Download nancy report
+        uses: actions/download-artifact@v4
+        with:
+          name: nancy-report
+          path: all-reports/nancy/
+        continue-on-error: true
+
+      - name: Write summary index
+        run: |
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          cat > all-reports/README.txt <<EOF
+          cloud-dump Security Scan Reports
+          =================================
+          Run   : $RUN_URL
+          Ref   : ${{ github.ref_name }}
+          Commit: ${{ github.sha }}
+          Date  : $(date -u +"%Y-%m-%d %H:%M UTC")
+
+          Files
+          -----
+          govulncheck/govulncheck.txt   — human-readable CVE report (official Go vuln DB)
+          govulncheck/govulncheck.json  — machine-readable JSON
+          gosec/gosec.txt               — human-readable static analysis findings
+          gosec/gosec.json              — machine-readable JSON
+          gosec/gosec.sarif             — SARIF (also uploaded to GitHub Security tab)
+          nancy/nancy.txt               — Sonatype OSS Index CVE report (text)
+          nancy/nancy.json              — machine-readable JSON
+          EOF
+
+      - name: Upload combined security reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports-${{ github.run_number }}
+          path: all-reports/
+          retention-days: 90
