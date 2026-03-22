@@ -43,7 +43,7 @@ func newStorjStorage(ctx context.Context, cfg Config) (*storjStorage, error) {
 	// Ensure the bucket exists (idempotent).
 	_, err = project.EnsureBucket(ctx, cfg.StorjBucket)
 	if err != nil {
-		project.Close()
+		_ = project.Close()
 		return nil, fmt.Errorf("ensuring storj bucket %q: %w", cfg.StorjBucket, err)
 	}
 

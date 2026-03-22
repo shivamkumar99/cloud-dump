@@ -124,7 +124,7 @@ func Download(ctx context.Context, cfg RestoreConfig) (*DownloadResult, error) {
 		errs = append(errs, e)
 	}
 	if len(errs) > 0 {
-		os.RemoveAll(stagingDir)
+		_ = os.RemoveAll(stagingDir)
 		return nil, fmt.Errorf("download errors: %v", errs)
 	}
 
@@ -215,7 +215,7 @@ func downloadTablespace(ctx context.Context, st storage.Storage, key, localPath 
 	}
 	defer rc.Close()
 
-	f, err := os.Create(localPath)
+	f, err := os.Create(localPath) //nolint:gosec // G304: localPath is filepath.Join(stagingDir, key) — staging dir is a temp dir created by os.MkdirTemp
 	if err != nil {
 		return fmt.Errorf("creating staging file %q: %w", localPath, err)
 	}
@@ -230,7 +230,7 @@ func downloadTablespace(ctx context.Context, st storage.Storage, key, localPath 
 // applyTablespace decrypts, decompresses, and extracts a staged archive to targetDir.
 // Pipeline: local file → [decrypt] → gzip → tar.Extract
 func applyTablespace(enc crypto.Encryptor, localPath, targetDir string, log zerolog.Logger) error {
-	f, err := os.Open(localPath)
+	f, err := os.Open(localPath) //nolint:gosec // G304: localPath originates from the staging dir populated by downloadTablespace
 	if err != nil {
 		return fmt.Errorf("opening staged file %q: %w", localPath, err)
 	}
@@ -273,7 +273,8 @@ func extractEntry(tr *tar.Reader, hdr *tar.Header, targetDir string, log zerolog
 
 	switch hdr.Typeflag {
 	case tar.TypeDir:
-		if err := os.MkdirAll(target, os.FileMode(hdr.Mode)); err != nil {
+		// G115: mask to 12-bit permission field to avoid int64→uint32 overflow.
+		if err := os.MkdirAll(target, os.FileMode(hdr.Mode&0o7777)); err != nil { //nolint:gosec // G304: path validated above
 			return fmt.Errorf("creating directory %q: %w", target, err)
 		}
 
@@ -281,15 +282,16 @@ func extractEntry(tr *tar.Reader, hdr *tar.Header, targetDir string, log zerolog
 		if err := os.MkdirAll(filepath.Dir(target), 0750); err != nil {
 			return fmt.Errorf("creating parent of %q: %w", target, err)
 		}
-		f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(hdr.Mode))
+		// G115: mask to 12-bit permission field to avoid int64→uint32 overflow.
+		f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(hdr.Mode&0o7777)) //nolint:gosec // G304: path validated above
 		if err != nil {
 			return fmt.Errorf("creating file %q: %w", target, err)
 		}
 		if _, err := io.Copy(f, tr); err != nil {
-			f.Close()
+			_ = f.Close()
 			return fmt.Errorf("writing file %q: %w", target, err)
 		}
-		f.Close()
+		_ = f.Close()
 
 	case tar.TypeSymlink:
 		if err := os.Symlink(hdr.Linkname, target); err != nil && !os.IsExist(err) {
@@ -331,7 +333,7 @@ func writeRecoveryConfig(cfg RestoreConfig) error {
 
 	// Append recovery settings to postgresql.auto.conf.
 	autoConfPath := filepath.Join(pgdata, "postgresql.auto.conf")
-	f, err := os.OpenFile(autoConfPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(autoConfPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600) //nolint:gosec // G304: path is filepath.Join(pgdata, "postgresql.auto.conf") — hardcoded filename
 	if err != nil {
 		return fmt.Errorf("opening postgresql.auto.conf: %w", err)
 	}

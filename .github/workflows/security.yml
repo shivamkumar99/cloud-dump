@@ -139,15 +139,8 @@ jobs:
 
       - name: Install nancy
         run: |
-          NANCY_URL=$(curl -sSf https://api.github.com/repos/sonatype-nexus-community/nancy/releases/latest \
-            | grep "browser_download_url" \
-            | grep "linux_amd64\"" \
-            | grep -v "\.sig\"" \
-            | cut -d'"' -f4)
-          echo "Downloading nancy from: $NANCY_URL"
-          curl -sSfL "$NANCY_URL" -o /usr/local/bin/nancy
-          chmod +x /usr/local/bin/nancy
-          nancy version
+          go install github.com/sonatype-nexus-community/nancy@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Create reports directory
         run: mkdir -p reports

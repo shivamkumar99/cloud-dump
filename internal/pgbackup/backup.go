@@ -218,7 +218,7 @@ func (s *backupSession) streamTablespaces(ctx context.Context, allTS []tsWork) (
 			t0 := time.Now()
 			if err := uploadStream(ctx, s.cfg.Storage, s.cfg.Encryptor, key, r, l); err != nil {
 				errCh <- fmt.Errorf("upload %q: %w", key, err)
-				r.CloseWithError(err)
+				_ = r.CloseWithError(err)
 				return
 			}
 			l.Info().Str("elapsed", formatDuration(time.Since(t0))).Msg("tablespace uploaded")
@@ -412,7 +412,7 @@ func startUploadConsumer(ctx context.Context, st storage.Storage, key string, pr
 	go func() {
 		err := st.Upload(ctx, key, pr)
 		if err != nil {
-			pr.CloseWithError(err)
+			_ = pr.CloseWithError(err)
 		}
 		ch <- err
 	}()

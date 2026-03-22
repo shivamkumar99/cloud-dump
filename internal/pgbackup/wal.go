@@ -99,7 +99,7 @@ func WalPush(ctx context.Context, cfg WalPushConfig) error {
 		defer close(done)
 		uploadErr = cfg.Storage.Upload(ctx, key, pr)
 		if uploadErr != nil {
-			pr.CloseWithError(uploadErr)
+			_ = pr.CloseWithError(uploadErr)
 		}
 	}()
 
@@ -280,24 +280,24 @@ func fetchAndWrite(
 	// This prevents PostgreSQL from reading a partially-written WAL file.
 	tmpPath := destPath + ".cloud-dump.tmp"
 
-	f, err := os.Create(tmpPath)
+	f, err := os.Create(tmpPath) //nolint:gosec // G304: tmpPath is destPath+".cloud-dump.tmp"; destPath is the user-specified WAL destination
 	if err != nil {
 		return fmt.Errorf("creating temp file %q: %w", tmpPath, err)
 	}
 
 	if _, err := io.Copy(f, r); err != nil {
-		f.Close()
-		os.Remove(tmpPath)
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("writing WAL to %q: %w", tmpPath, err)
 	}
 
 	if err := f.Close(); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("closing temp file %q: %w", tmpPath, err)
 	}
 
 	if err := os.Rename(tmpPath, destPath); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("renaming %q → %q: %w", tmpPath, destPath, err)
 	}
 

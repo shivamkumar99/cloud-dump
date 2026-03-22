@@ -17,7 +17,7 @@ var (
 	recipientKey  string
 )
 
-var backupCmd = &cobra.Command{
+var backupCmd = &cobra.Command{ //nolint:gosec // G101: example URL in CLI help text — not real credentials
 	Use:   "backup",
 	Short: "Take a physical backup of the PostgreSQL cluster",
 	Long: `Connects using the streaming replication protocol and streams the full
