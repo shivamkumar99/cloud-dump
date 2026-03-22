@@ -1,0 +1,232 @@
+services:
+
+  # ── Source: PostgreSQL 17 — default PGDATA location ──────────────────────────
+  # PGDATA = /var/lib/postgresql/data  (Docker image default)
+  # Verifies cloud-dump works with the standard data directory layout.
+  postgres17:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "max_wal_senders=10"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "wal_keep_size=128"
+      - "-c"
+      - "log_min_messages=warning"
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - pgdata17:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ── Source: PostgreSQL 18 — custom PGDATA location ───────────────────────────
+  # PGDATA = /var/lib/postgresql/18/main  (non-default via PGDATA env var)
+  # Verifies cloud-dump works when the data directory is not at the default path.
+  postgres18:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      PGDATA: /var/lib/postgresql/18/main
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "max_wal_senders=10"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "wal_keep_size=128"
+      - "-c"
+      - "log_min_messages=warning"
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - pgdata18:/var/lib/postgresql/18/main
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ── Restore target: PostgreSQL 17 ────────────────────────────────────────────
+  # Bind-mounted so cloud-dump restore can write directly to the host path.
+  # Fresh state: test_user + restore_marker table (seeded by init-restore/).
+  # After restore: source data replaces it — restore_marker gone.
+  postgres17-restore:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - ./init-restore:/docker-entrypoint-initdb.d:ro
+      - ./restore-data/pg17:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ── Restore target: PostgreSQL 18 (custom PGDATA) ────────────────────────────
+  # Same as postgres17-restore but for PG18 backups.
+  # Uses custom PGDATA to match the source layout — restore must handle this correctly.
+  postgres18-restore:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      PGDATA: /var/lib/postgresql/18/main
+    volumes:
+      - ./init-restore:/docker-entrypoint-initdb.d:ro
+      - ./restore-data/pg18:/var/lib/postgresql/18/main
+    ports:
+      - "5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ── pgAdmin ───────────────────────────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres17:
+        condition: service_healthy
+      postgres18:
+        condition: service_healthy
+      postgres17-wal:
+        condition: service_healthy
+
+  # ── WAL archiving source: PostgreSQL 17 with cloud-dump installed ────────────
+  # archive_mode=on + archive_command streams every completed WAL segment to Storj
+  # via the wal-archive.sh wrapper, which reads credentials from env.
+  #
+  # Requires a .env file (or env vars) — use ONE of:
+  #   Option A (access grant):  STORJ_ACCESS=<grant>
+  #   Option B (API key):       STORJ_API_KEY + STORJ_SATELLITE + STORJ_PASSPHRASE
+  #
+  # Also required: STORJ_BUCKET=<your-bucket>
+  postgres17-wal:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      # Option A — access grant
+      STORJ_ACCESS: ${STORJ_ACCESS:-}
+      # Option B — API key + satellite + passphrase
+      STORJ_API_KEY: ${STORJ_API_KEY:-}
+      STORJ_SATELLITE: ${STORJ_SATELLITE:-}
+      STORJ_PASSPHRASE: ${STORJ_PASSPHRASE:-}
+      # Common
+      STORJ_BUCKET: ${STORJ_BUCKET:-cloud-dump-wal-test}
+      CLUSTER: ${CLUSTER:-}
+      WAL_PREFIX: ${WAL_PREFIX:-}
+      WAL_COMPRESS: ${WAL_COMPRESS:-true}
+      WAL_ENCRYPT: ${WAL_ENCRYPT:-false}
+      WAL_PASSPHRASE: ${WAL_PASSPHRASE:-}
+      WAL_RECIPIENT_KEY: ${WAL_RECIPIENT_KEY:-}
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "archive_mode=on"
+      - "-c"
+      - "archive_command=/usr/local/bin/wal-archive %p %f"
+      - "-c"
+      - "max_wal_senders=10"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "wal_keep_size=128"
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - pgdata17-wal:/var/lib/postgresql/data
+    ports:
+      - "5436:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ── WAL restore target: PostgreSQL 17 with cloud-dump installed ───────────
+  # Populated by running:
+  #   cloud-dump restore --name <backup> --pgdata docker/restore-data/pg17-wal \
+  #     --storage storj --storj-access "$STORJ_ACCESS" --storj-bucket "$STORJ_BUCKET" \
+  #     --recovery-target-time "..."
+  #
+  # Then start with:  make wal-restore-start
+  # PostgreSQL replays WAL segments fetched by cloud-dump wal-fetch during recovery.
+  # The restore_command embedded in postgresql.auto.conf uses cloud-dump directly.
+  # Alternatively, set restore_command = '/usr/local/bin/wal-restore %f %p' and
+  # supply STORJ_ACCESS + STORJ_BUCKET here as environment variables.
+  postgres17-wal-restore:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      # Option A — access grant
+      STORJ_ACCESS: ${STORJ_ACCESS:-}
+      # Option B — API key + satellite + passphrase
+      STORJ_API_KEY: ${STORJ_API_KEY:-}
+      STORJ_SATELLITE: ${STORJ_SATELLITE:-}
+      STORJ_PASSPHRASE: ${STORJ_PASSPHRASE:-}
+      # Common
+      STORJ_BUCKET: ${STORJ_BUCKET:-cloud-dump-wal-test}
+      CLUSTER: ${CLUSTER:-}
+      WAL_PREFIX: ${WAL_PREFIX:-}
+      WAL_PASSPHRASE: ${WAL_PASSPHRASE:-}
+      WAL_IDENTITY_KEY: ${WAL_IDENTITY_KEY:-}
+    volumes:
+      - ./restore-data/pg17-wal:/var/lib/postgresql/data
+    ports:
+      - "5438:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pgdata17:
+  pgdata18:
+  pgdata17-wal:
+  pgadmin_data:

@@ -1,0 +1,11 @@
+# Build output
+cloud-dump
+
+# .env — contains real Storj credentials, never commit
+.env
+
+# PostgreSQL restore-target data — populated at runtime by cloud-dump restore / docker init.
+# These directories are created automatically by docker-compose; no need to track them.
+docker/restore-data/
+roadmaps/
+.claude/

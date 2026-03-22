@@ -1,0 +1,70 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "PG17 · source · default PGDATA (localhost:5432)",
+      "Group": "Sources",
+      "Host": "postgres17",
+      "Port": 5432,
+      "MaintenanceDB": "postgres",
+      "Username": "postgres",
+      "Password": "postgres",
+      "SSLMode": "prefer",
+      "Comment": "PostgreSQL 17 — default PGDATA (/var/lib/postgresql/data). ecommerce_db, analytics_db, inventory_db + ~50 MB sample data."
+    },
+    "2": {
+      "Name": "PG18 · source · custom PGDATA (localhost:5434)",
+      "Group": "Sources",
+      "Host": "postgres18",
+      "Port": 5432,
+      "MaintenanceDB": "postgres",
+      "Username": "postgres",
+      "Password": "postgres",
+      "SSLMode": "prefer",
+      "Comment": "PostgreSQL 18 — custom PGDATA (/var/lib/postgresql/18/main). Same sample data as PG17 source."
+    },
+    "3": {
+      "Name": "PG17 · WAL archiving source (localhost:5436)",
+      "Group": "Sources",
+      "Host": "postgres17-wal",
+      "Port": 5432,
+      "MaintenanceDB": "postgres",
+      "Username": "postgres",
+      "Password": "postgres",
+      "SSLMode": "prefer",
+      "Comment": "PostgreSQL 17 — archive_mode=on. WAL segments archived to Storj via cloud-dump wal-push. Use this instance for WAL archiving and PITR testing."
+    },
+    "4": {
+      "Name": "PG17 · restore-target (localhost:5433)",
+      "Group": "Restore Targets",
+      "Host": "postgres17-restore",
+      "Port": 5432,
+      "MaintenanceDB": "postgres",
+      "Username": "postgres",
+      "Password": "postgres",
+      "SSLMode": "prefer",
+      "Comment": "Restore target for PG17 backups. Fresh: test_user + restore_marker. After restore: source data replaces everything."
+    },
+    "5": {
+      "Name": "PG18 · restore-target · custom PGDATA (localhost:5435)",
+      "Group": "Restore Targets",
+      "Host": "postgres18-restore",
+      "Port": 5432,
+      "MaintenanceDB": "postgres",
+      "Username": "postgres",
+      "Password": "postgres",
+      "SSLMode": "prefer",
+      "Comment": "Restore target for PG18 backups (custom PGDATA). Fresh: test_user + restore_marker. After restore: source data replaces everything."
+    },
+    "6": {
+      "Name": "PG17 · WAL restore-target (localhost:5438)",
+      "Group": "Restore Targets",
+      "Host": "postgres17-wal-restore",
+      "Port": 5432,
+      "MaintenanceDB": "postgres",
+      "Username": "postgres",
+      "Password": "postgres",
+      "SSLMode": "prefer",
+      "Comment": "PITR restore target. Populated by cloud-dump restore with --recovery-target-time. PostgreSQL replays archived WAL from Storj then promotes. Start with: make wal-restore-start"
+    }
+  }
+}
