@@ -27,7 +27,10 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          # Always use the latest stable Go so stdlib CVEs fixed in newer
+          # toolchains are resolved. The toolchain directive in go.mod pins
+          # the minimum patched version (go1.25.8 fixes GO-2026-4601/4602).
+          go-version: stable
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
@@ -68,7 +71,10 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          # Always use the latest stable Go so stdlib CVEs fixed in newer
+          # toolchains are resolved. The toolchain directive in go.mod pins
+          # the minimum patched version (go1.25.8 fixes GO-2026-4601/4602).
+          go-version: stable
 
       - name: Install gosec
         run: go install github.com/securego/gosec/v2/cmd/gosec@latest
@@ -135,7 +141,10 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          # Always use the latest stable Go so stdlib CVEs fixed in newer
+          # toolchains are resolved. The toolchain directive in go.mod pins
+          # the minimum patched version (go1.25.8 fixes GO-2026-4601/4602).
+          go-version: stable
 
       - name: Install nancy
         run: |

@@ -1,6 +1,8 @@
 module github.com/shivamkumar99/cloud-dump
 
-go 1.24
+go 1.25
+
+toolchain go1.25.8
 
 require (
 	filippo.io/age v1.2.1
