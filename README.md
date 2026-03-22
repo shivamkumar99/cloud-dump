@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/shivamkumar99/cloud-dump/actions/workflows/ci.yml/badge.svg)](https://github.com/shivamkumar99/cloud-dump/actions/workflows/ci.yml)
 [![Release](https://github.com/shivamkumar99/cloud-dump/actions/workflows/release.yml/badge.svg)](https://github.com/shivamkumar99/cloud-dump/actions/workflows/release.yml)
+[![Security](https://github.com/shivamkumar99/cloud-dump/actions/workflows/security.yml/badge.svg)](https://github.com/shivamkumar99/cloud-dump/actions/workflows/security.yml)
 [![Latest Release](https://img.shields.io/github/v/release/shivamkumar99/cloud-dump?include_prereleases&sort=semver)](https://github.com/shivamkumar99/cloud-dump/releases/latest)
 [![Go Version](https://img.shields.io/badge/go-1.22+-00ADD8?logo=go&logoColor=white)](https://golang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)

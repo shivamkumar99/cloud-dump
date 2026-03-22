@@ -1,0 +1,120 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run every Monday at 08:00 UTC to catch newly published CVEs
+    - cron: "0 8 * * 1"
+
+permissions:
+  contents: read
+  security-events: write   # required for uploading SARIF results to GitHub
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 1. govulncheck — official Go vulnerability scanner
+  #    Checks your exact dependency graph against the Go vulnerability database.
+  #    Only reports vulnerabilities that are reachable from your code.
+  # ─────────────────────────────────────────────────────────────────────────────
+  govulncheck:
+    name: govulncheck (dependency CVEs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 2. gosec — Go security static analyser
+  #    Detects: hardcoded credentials, SQL injection, unsafe file permissions,
+  #    weak crypto, unhandled errors in security-sensitive calls, etc.
+  #    Outputs SARIF so findings appear in GitHub Security → Code scanning.
+  # ─────────────────────────────────────────────────────────────────────────────
+  gosec:
+    name: gosec (static security analysis)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run gosec
+        uses: securego/gosec@master
+        with:
+          # -no-fail: let the SARIF upload step decide severity; still fails on
+          # high-confidence findings via the exit-code check below.
+          # -fmt sarif: machine-readable output for GitHub Code Scanning.
+          args: >
+            -no-fail
+            -fmt sarif
+            -out gosec-results.sarif
+            ./...
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: gosec-results.sarif
+          category: gosec
+
+      - name: Fail on high-severity findings
+        # Re-run without -no-fail so the job fails when gosec finds real issues.
+        # Exclude informational rules (G104 = "errors unhandled" in non-critical
+        # paths) to keep signal-to-noise high.
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -severity high -confidence medium -exclude G104 ./...
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 3. Dependency review — PR-only
+  #    Blocks merging PRs that add dependencies with known CVEs or use
+  #    restrictive SPDX licenses.
+  # ─────────────────────────────────────────────────────────────────────────────
+  dependency-review:
+    name: Dependency review (PRs only)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          # Allow OSI-approved permissive licenses; block copyleft and unknown.
+          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 4. nancy — Sonatype OSS Index vulnerability scan on go.sum
+  #    Independent second opinion alongside govulncheck.
+  # ─────────────────────────────────────────────────────────────────────────────
+  nancy:
+    name: nancy (OSS Index CVE scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: List modules as JSON
+        run: go list -json -deps ./... > go-list.json
+
+      - name: Run nancy
+        uses: sonatype-nexus-community/nancy-github-action@main
+        with:
+          nancyCommand: sleuth --loud
