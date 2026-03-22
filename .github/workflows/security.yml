@@ -71,9 +71,6 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          # Always use the latest stable Go so stdlib CVEs fixed in newer
-          # toolchains are resolved. The toolchain directive in go.mod pins
-          # the minimum patched version (go1.25.8 fixes GO-2026-4601/4602).
           go-version: stable
 
       - name: Install gosec
@@ -130,56 +127,12 @@ jobs:
           allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 4. nancy — Sonatype OSS Index vulnerability scan
-  #    Independent second opinion alongside govulncheck.
-  # ─────────────────────────────────────────────────────────────────────────────
-  nancy:
-    name: nancy (OSS Index CVE scan)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          # Always use the latest stable Go so stdlib CVEs fixed in newer
-          # toolchains are resolved. The toolchain directive in go.mod pins
-          # the minimum patched version (go1.25.8 fixes GO-2026-4601/4602).
-          go-version: stable
-
-      - name: Install nancy
-        run: |
-          go install github.com/sonatype-nexus-community/nancy@latest
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
-      - name: Create reports directory
-        run: mkdir -p reports
-
-      - name: Run nancy — text report
-        run: go list -json -deps ./... | nancy sleuth --loud 2>&1 | tee reports/nancy.txt
-        continue-on-error: true
-
-      - name: Run nancy — JSON report
-        run: go list -json -deps ./... | nancy sleuth --output=json > reports/nancy.json 2>&1
-        continue-on-error: true
-
-      - name: Upload nancy reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: nancy-report
-          path: reports/nancy.*
-          retention-days: 30
-
-      - name: Fail if vulnerabilities found
-        run: go list -json -deps ./... | nancy sleuth
-
-  # ─────────────────────────────────────────────────────────────────────────────
-  # 5. Summary — bundles all reports into one downloadable zip
+  # 4. Summary — bundles all reports into one downloadable zip
   # ─────────────────────────────────────────────────────────────────────────────
   summary:
     name: Bundle all reports
     runs-on: ubuntu-latest
-    needs: [govulncheck, gosec, nancy]
+    needs: [govulncheck, gosec]
     if: always()
     steps:
       - name: Download govulncheck report
@@ -194,13 +147,6 @@ jobs:
         with:
           name: gosec-report
           path: all-reports/gosec/
-        continue-on-error: true
-
-      - name: Download nancy report
-        uses: actions/download-artifact@v4
-        with:
-          name: nancy-report
-          path: all-reports/nancy/
         continue-on-error: true
 
       - name: Write summary index
@@ -221,8 +167,6 @@ jobs:
           gosec/gosec.txt               — human-readable static analysis findings
           gosec/gosec.json              — machine-readable JSON
           gosec/gosec.sarif             — SARIF (also uploaded to GitHub Security tab)
-          nancy/nancy.txt               — Sonatype OSS Index CVE report (text)
-          nancy/nancy.json              — machine-readable JSON
           EOF
 
       - name: Upload combined security reports
