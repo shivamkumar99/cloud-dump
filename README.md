@@ -1,5 +1,11 @@
 # cloud-dump
 
+[![CI](https://github.com/shivamkumar99/cloud-dump/actions/workflows/ci.yml/badge.svg)](https://github.com/shivamkumar99/cloud-dump/actions/workflows/ci.yml)
+[![Release](https://github.com/shivamkumar99/cloud-dump/actions/workflows/release.yml/badge.svg)](https://github.com/shivamkumar99/cloud-dump/actions/workflows/release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/shivamkumar99/cloud-dump?include_prereleases&sort=semver)](https://github.com/shivamkumar99/cloud-dump/releases/latest)
+[![Go Version](https://img.shields.io/badge/go-1.22+-00ADD8?logo=go&logoColor=white)](https://golang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A Go CLI that streams complete physical PostgreSQL backups directly to cloud storage — no `pg_dump`, no temporary files on disk. Supports **WAL archiving** and **Point-in-Time Recovery (PITR)**.
 
 Uses PostgreSQL's native **streaming replication protocol** (same as `pg_basebackup`, pure Go). Captures the entire cluster: all databases, roles, permissions, sequences, functions, and triggers.
@@ -35,7 +41,6 @@ Uses PostgreSQL's native **streaming replication protocol** (same as `pg_basebac
 - [Encryption](#encryption)
 - [How it works](#how-it-works)
 - [Development environment](#development-environment)
-- [Project structure](#project-structure)
 
 ---
 
@@ -1106,56 +1111,3 @@ All containers and their ports:
 | `make test` | `docker-up` + unit + integration (Docker stays running) |
 | `make ci` | `docker-up` + unit + integration + `docker-down` |
 
----
-
-## Project structure
-
-```
-cloud-dump/
-├── main.go
-├── go.mod
-├── Makefile
-├── .env.example             # Storj credentials template
-├── cmd/
-│   ├── root.go              # Cobra root + persistent flags + cluster path helpers
-│   ├── backup.go            # backup subcommand
-│   ├── restore.go           # restore subcommand (PITR support)
-│   ├── list.go              # list subcommand
-│   ├── wal_push.go          # wal-push (archive_command)
-│   └── wal_fetch.go         # wal-fetch (restore_command)
-├── internal/
-│   ├── pgbackup/
-│   │   ├── backup.go        # BASE_BACKUP streaming + goroutine pool
-│   │   ├── restore.go       # Download → Apply phases + recovery config
-│   │   ├── manifest.go      # Manifest: LSNs, encryption flag, tablespace list
-│   │   ├── wal.go           # WalPush / WalFetch
-│   │   ├── backup_helpers_test.go
-│   │   ├── restore_test.go
-│   │   └── wal_test.go
-│   ├── crypto/
-│   │   ├── crypto.go        # Encryptor interface + Noop / Passphrase / KeyPair
-│   │   └── crypto_test.go
-│   └── storage/
-│       ├── storage.go       # Storage interface + factory
-│       ├── storj.go         # Storj uplink implementation
-│       ├── memory.go        # In-memory implementation (tests)
-│       └── memory_test.go
-├── tests/
-│   └── integration/
-│       ├── helpers_test.go  # Shared test utilities
-│       ├── infra_test.go    # Docker + PostgreSQL helpers
-│       ├── backup_test.go   # Backup integration tests (in-memory storage)
-│       ├── restore_test.go  # Restore integration tests (in-memory storage)
-│       ├── wal_test.go      # WAL push + fetch integration tests (in-memory storage)
-│       └── storj_test.go    # End-to-end tests against real Storj (skipped without creds)
-├── docker/
-│   ├── Dockerfile           # Multi-stage: Go build → postgres:17-alpine + cloud-dump binary
-│   ├── docker-compose.yml   # All PostgreSQL instances + pgAdmin
-│   ├── wal-archive.sh       # archive_command wrapper (reads Storj creds from env)
-│   ├── wal-restore.sh       # restore_command wrapper (reads Storj creds from env)
-│   └── restore-data/        # Bind-mounted PGDATA dirs for restore containers
-│       ├── pg17/            # postgres17-restore PGDATA
-│       └── pg17-wal/        # postgres17-wal-restore PGDATA
-└── roadmaps/
-    └── roadmap.md
-```

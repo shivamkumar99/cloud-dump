@@ -1,0 +1,122 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux
+          - goos: linux
+            goarch: amd64
+            suffix: ""
+          - goos: linux
+            goarch: arm64
+            suffix: ""
+          - goos: linux
+            goarch: arm
+            goarm: "7"
+            suffix: ""
+          # macOS
+          - goos: darwin
+            goarch: amd64
+            suffix: ""
+          - goos: darwin
+            goarch: arm64
+            suffix: ""
+          # Windows
+          - goos: windows
+            goarch: amd64
+            suffix: ".exe"
+          - goos: windows
+            goarch: arm64
+            suffix: ".exe"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          CGO_ENABLED: "0"
+        run: |
+          ASSET_NAME="cloud-dump_${{ matrix.goos }}_${{ matrix.goarch }}"
+          if [ -n "${{ matrix.goarm }}" ]; then
+            ASSET_NAME="${ASSET_NAME}v${{ matrix.goarm }}"
+          fi
+          ASSET_NAME="${ASSET_NAME}${{ matrix.suffix }}"
+          go build -trimpath -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
+            -o "dist/${ASSET_NAME}" .
+          echo "ASSET_NAME=${ASSET_NAME}" >> "$GITHUB_ENV"
+
+      - name: Compress (Linux / macOS)
+        if: matrix.goos != 'windows'
+        run: |
+          cd dist
+          tar -czf "${ASSET_NAME%.}.tar.gz" "${ASSET_NAME}"
+          rm "${ASSET_NAME}"
+          echo "UPLOAD_FILE=${ASSET_NAME%.}.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Compress (Windows)
+        if: matrix.goos == 'windows'
+        run: |
+          cd dist
+          zip "${ASSET_NAME%.exe}.zip" "${ASSET_NAME}"
+          rm "${ASSET_NAME}"
+          echo "UPLOAD_FILE=${ASSET_NAME%.exe}.zip" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.UPLOAD_FILE }}
+          path: dist/${{ env.UPLOAD_FILE }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
